@@ -171,4 +171,11 @@ cython_debug/
 .ruff_cache/
 
 # PyPI configuration file
-.pypirc
+labelme_env/
+
+#Ignored the extracted file from rar dataset
+dce_tensordata.pth
+
+# Ignore output images
+mri_png_slices_gray/*
+mri_png_slices_plasma/*
