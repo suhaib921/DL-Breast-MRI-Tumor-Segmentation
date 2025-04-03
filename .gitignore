@@ -175,7 +175,9 @@ labelme_env/
 
 #Ignored the extracted file from rar dataset
 convertData2PNG/dce_tensordata.pth
-
+*
 # Ignore output images
 convertData2PNG/mri_png_slices_gray/*
 convertData2PNG/mri_png_slices_plasma/*
+
+python*
