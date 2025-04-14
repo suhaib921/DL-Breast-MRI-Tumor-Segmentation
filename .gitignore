@@ -172,12 +172,17 @@ cython_debug/
 
 # PyPI configuration file
 labelme_env/
+python*
+pip*
+Activate*
+activate*
+pyvenv*
+lib*
+f2py*
+numpy*
 
 #Ignored the extracted file from rar dataset
 convertData2PNG/dce_tensordata.pth
-*
-# Ignore output images
-convertData2PNG/mri_png_slices_gray/*
-convertData2PNG/mri_png_slices_plasma/*
+convertData2PNG/labeled_mri_gray/*
 
-python*
+
