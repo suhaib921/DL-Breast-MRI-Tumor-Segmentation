@@ -184,5 +184,8 @@ numpy*
 #Ignored the extracted file from rar dataset
 convertData2PNG/dce_tensordata.pth
 convertData2PNG/labeled_mri_gray/*
+labeled_mri_gray*
+*.pdf
+OneDrive*
 
 
