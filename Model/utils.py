@@ -7,7 +7,6 @@ import torch.utils.data as utils
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from torch import Tensor
-from denoise_traditional import denoise_gaussian,denoise_nlm
 
 
 
