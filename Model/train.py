@@ -37,6 +37,8 @@ def train_model(
         if val_metrics["dice"] > best_dice:
             best_dice = val_metrics["dice"]
             torch.save(model.state_dict(), save_path)
+    
+    return model, {"train_loss": train_loss, "val_metrics": val_metrics}
 
 def evaluate(model, data_loader, device, loss_fn):
     model.eval()
@@ -73,3 +75,106 @@ def evaluate(model, data_loader, device, loss_fn):
         "hausdorff": np.nanmean(hd),
     }
     return metrics
+
+def train_seg(model, train_loader, val_loader, criterion, optimizer, device, num_epochs=15, logger=None):
+    """
+    Training function for segmentation model that aligns with the notebook's expected function.
+    """
+    results = {'train_loss': [], 'val_loss': [], 'val_accuracy': [], 'val_dice': []}
+    
+    best_val_loss = float('inf')
+    
+    for epoch in range(num_epochs):
+        # Train phase
+        model.train()
+        running_loss = 0.0
+        
+        for inputs, labels in tqdm(train_loader):
+            inputs = inputs.float().to(device)
+            labels = labels.long().to(device)
+            
+            optimizer.zero_grad()
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+            
+            running_loss += loss.item() * inputs.size(0)
+        
+        epoch_loss = running_loss / len(train_loader.dataset)
+        results['train_loss'].append(epoch_loss)
+        
+        # Validation phase every 2 epochs
+        if epoch % 2 == 0:
+            val_loss, val_acc, val_dice = check_accuracy(model, val_loader, criterion, device)
+            results['val_loss'].append(val_loss)
+            results['val_accuracy'].append(val_acc)
+            results['val_dice'].append(val_dice)
+            
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), f'best_model_epoch_{epoch}.pth')
+            
+            if logger:
+                logger.info(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}, '
+                           f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, Val Dice: {val_dice:.4f}')
+            else:
+                print(f'Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_loss:.4f}, '
+                     f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, Val Dice: {val_dice:.4f}')
+    
+    return model, results
+
+def check_accuracy(model, dataloader, criterion, device):
+    """
+    Evaluates model performance on validation or test set.
+    """
+    model.eval()
+    total_loss = 0.0
+    correct = 0
+    total_pixels = 0
+    dice_list = []
+    
+    with torch.no_grad():
+        for inputs, labels in dataloader:
+            inputs = inputs.float().to(device)
+            labels = labels.long().to(device)
+            
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            total_loss += loss.item() * inputs.size(0)
+            
+            _, predicted = torch.max(outputs.data, 1)
+            total_pixels += labels.numel()
+            correct += (predicted == labels).sum().item()
+            
+            # Calculate Dice coefficient
+            for i in range(outputs.size(0)):
+                pred_one_hot = torch.nn.functional.one_hot(predicted[i], num_classes=outputs.size(1)).permute(2, 0, 1).float()
+                label_one_hot = torch.nn.functional.one_hot(labels[i], num_classes=outputs.size(1)).permute(2, 0, 1).float()
+                
+                dice = calculate_multiclass_dice(pred_one_hot, label_one_hot)
+                dice_list.append(dice)
+    
+    avg_loss = total_loss / len(dataloader.dataset)
+    accuracy = correct / total_pixels
+    avg_dice = np.mean(dice_list)
+    
+    return avg_loss, accuracy, avg_dice
+
+def calculate_multiclass_dice(pred, target, epsilon=1e-6):
+    """
+    Calculate Dice coefficient for multi-class segmentation.
+    """
+    # Flatten the tensors
+    pred_flat = pred.reshape(pred.size(0), -1)
+    target_flat = target.reshape(target.size(0), -1)
+    
+    # Calculate intersection and union
+    intersection = (pred_flat * target_flat).sum(dim=1)
+    union = pred_flat.sum(dim=1) + target_flat.sum(dim=1)
+    
+    # Calculate Dice coefficient for each class
+    dice = (2. * intersection + epsilon) / (union + epsilon)
+    
+    # Return mean Dice over all classes
+    return dice.mean().item()
