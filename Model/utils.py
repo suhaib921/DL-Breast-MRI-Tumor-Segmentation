@@ -30,9 +30,6 @@ class JointTransform:
     def __init__(self, augment=True, size=(300, 300)):
         self.augment = augment
         self.size = size
-        self.normalize = transforms.Normalize(
-            mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-        )
 
     def __call__(self, image, mask):
         # Resize to specified size
@@ -53,10 +50,8 @@ class JointTransform:
         # Convert to tensors
         image = transforms.ToTensor()(image)
         mask = transforms.ToTensor()(mask)
+        mask = (mask > 0.5).float() # Normalize image and binarize mask
 
-        # Normalize image and binarize mask
-        image = self.normalize(image)
-        mask = (mask > 0.5).float()
 
         return image, mask
 
@@ -77,51 +72,57 @@ class CustomDataset(Dataset):
             image, mask = self.transform(image, mask)
         return image, mask
 
-class BreastDataset_seg(Dataset):
-    """Dataset class for breast segmentation that matches the notebook expectations."""
-    def __init__(self, time_point, data_dir, train_val="train", one_or_twoDim=False, denoise=False, seg_num=8, transform=None):
+# Modified BreastDataset_seg class in utils.py
+class BreastDatasetSeg(Dataset):
+    def __init__(self, data_dir, split="train", transform=None):
+        """
+        Args:
+            data_dir: Path to directory with PNG files
+            split: One of 'train', 'val', 'test'
+            transform: Albumentations transforms
+        """
         self.data_dir = data_dir
         self.transform = transform
-        self.train_val = train_val
-        self.time_point = time_point
-        self.one_or_twoDim = one_or_twoDim
-        self.denoise = denoise
-        self.seg_num = seg_num
+        self.samples = self._get_samples(split)
         
-        # Define file paths based on train_val split
-        if train_val == "train":
-            self.samples = list(range(1, 16))  # Example: Use samples 1-15 for training
-        elif train_val == "val":
-            self.samples = list(range(16, 21))  # Example: Use samples 16-20 for validation
-        elif train_val == "inf":
-            self.samples = list(range(21, 26))  # Example: Use samples 21-25 for inference
-        else:
-            raise ValueError("train_val must be 'train', 'val', or 'inf'")
+    def _get_samples(self, split):
+        """Get list of (post_img_path, subtraction_img_path, mask_path) tuples"""
+        samples = []
+        # Implement your split logic here (e.g., using text files)
+        # Example structure:
+        for case_id in sorted(os.listdir(self.data_dir)):
+            case_dir = os.path.join(self.data_dir, case_id)
+            post_img = os.path.join(case_dir, "post_contrast.png")
+            subtraction_img = os.path.join(case_dir, "subtraction.png")
+            mask_img = os.path.join(case_dir, "mask.png")
             
-    def __len__(self):
-        return len(self.samples)
-        
+            if all([os.path.exists(post_img), 
+                    os.path.exists(substitution_img),
+                    os.path.exists(mask_img)]):
+                samples.append((post_img, subtraction_img, mask_img))
+        return samples[:int(0.8*len(samples))]  # Example split
+    
     def __getitem__(self, idx):
-        sample_idx = self.samples[idx]
+        post_path, sub_path, mask_path = self.samples[idx]
         
-        # Load DWI data
-        dwi_path = os.path.join(self.data_dir, f'sample_{sample_idx}_NoisyDWIk.npy')
-        dwi_data = np.load(dwi_path)
+        # Load images
+        post_img = np.array(Image.open(post_path).convert("L"))  # Grayscale
+        sub_img = np.array(Image.open(sub_path).convert("L"))
+        mask = np.array(Image.open(mask_path).convert("L"))
         
-        # Load tissue label
-        label_path = os.path.join(self.data_dir, f'sample_{sample_idx}_TissueType.npy')
-        label_data = np.load(label_path)
+        # Stack inputs: (H, W, 2) for post-contrast + subtraction
+        image = np.stack([post_img, sub_img], axis=-1)
         
-        # Convert to tensor
-        dwi_tensor = torch.from_numpy(dwi_data).float()
-        label_tensor = torch.from_numpy(label_data).long()
-        
-        # Apply transform if available
-        if self.transform is not None:
-            dwi_tensor, label_tensor = self.transform(dwi_tensor, label_tensor)
+        if self.transform:
+            augmented = self.transform(image=image, mask=mask)
+            image = augmented['image']
+            mask = augmented['mask']
             
-        return dwi_tensor, label_tensor
-
+        # Convert to tensors
+        image = torch.from_numpy(image).permute(2, 0, 1).float()  # (2, H, W)
+        mask = torch.from_numpy(mask).unsqueeze(0).float()  # (1, H, W)
+        
+        return image, mask
 # Transforms for data augmentation that match the notebook
 class Compose:
     def __init__(self, transforms):
