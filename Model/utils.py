@@ -21,7 +21,7 @@ def get_model(model_name, seg_parts, device):
     """Get model based on name."""
     if model_name == "UNet":
         from unet.unet_model import UNet
-        return UNet(in_channels=7, out_channels=seg_parts).to(device)
+        return UNet(in_channels=3, out_channels=seg_parts).to(device)
     else:
         raise ValueError(f"Model {model_name} not implemented")
 

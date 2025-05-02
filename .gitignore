@@ -187,5 +187,10 @@ convertData2PNG/labeled_mri_gray/*
 labeled_mri_gray*
 *.pdf
 OneDrive*
+google_colab*
+google_colab
+google_colab.zip
 
 
+Model/*.pth
+first_trained_model.pth

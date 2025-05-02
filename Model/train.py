@@ -14,11 +14,14 @@ def train_model(
         # Training loop
         model.train()
         train_loss = 0.0
+         # For tracking Dice on training set (optional)
+        dice_sum = 0.0
+        count = 0
         for images, masks in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}"):
             images, masks = images.to(device), masks.to(device)
             optimizer.zero_grad()
             outputs = model(images)
-            loss = loss_fn(outputs, masks)
+            loss = criterion(outputs, masks)
             loss.backward()
             optimizer.step()
             train_loss += loss.item() * images.size(0)
@@ -125,41 +128,33 @@ def train_seg(model, train_loader, val_loader, criterion, optimizer, device, num
     return model, results
 
 def check_accuracy(model, dataloader, criterion, device):
-    """
-    Evaluates model performance on validation or test set.
-    """
     model.eval()
     total_loss = 0.0
-    correct = 0
-    total_pixels = 0
     dice_list = []
     
     with torch.no_grad():
         for inputs, labels in dataloader:
             inputs = inputs.float().to(device)
-            labels = labels.long().to(device)
+            labels = labels.float().to(device)  # Ensure labels are float for BCE
             
             outputs = model(inputs)
             loss = criterion(outputs, labels)
             total_loss += loss.item() * inputs.size(0)
             
-            _, predicted = torch.max(outputs.data, 1)
-            total_pixels += labels.numel()
-            correct += (predicted == labels).sum().item()
+            # Convert outputs to probabilities and binary masks
+            probs = torch.sigmoid(outputs)
+            predicted = (probs >= 0.5).float()
             
-            # Calculate Dice coefficient
+            # Calculate Dice for each sample in the batch
             for i in range(outputs.size(0)):
-                pred_one_hot = torch.nn.functional.one_hot(predicted[i], num_classes=outputs.size(1)).permute(2, 0, 1).float()
-                label_one_hot = torch.nn.functional.one_hot(labels[i], num_classes=outputs.size(1)).permute(2, 0, 1).float()
-                
-                dice = calculate_multiclass_dice(pred_one_hot, label_one_hot)
+                pred = predicted[i].squeeze().cpu().numpy()
+                true = labels[i].squeeze().cpu().numpy()
+                dice = dice_coef(pred, true)
                 dice_list.append(dice)
     
     avg_loss = total_loss / len(dataloader.dataset)
-    accuracy = correct / total_pixels
-    avg_dice = np.mean(dice_list)
-    
-    return avg_loss, accuracy, avg_dice
+    avg_dice = np.nanmean(dice_list)
+    return avg_loss, avg_dice
 
 def calculate_multiclass_dice(pred, target, epsilon=1e-6):
     """
